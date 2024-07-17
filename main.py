@@ -822,8 +822,9 @@ class VQAModel(nn.Module):
             return output
     
     # ------------------------------------------------------------
-    def train_model(self, training_dataloader, validation_dataloader, test_dataloader, 
-                    criterion, optimizer, epochs = 10, dl24_json=False, filehead="", save_path = None, save_every = 1):
+    def train_model(self, training_dataloader, validation_dataloader, test_dataloader, test_dataset,
+                    criterion, optimizer, epochs = 10, dl24_json=False, 
+                    filehead="", npy_dir="npy", pth_dir="pth", save_every=1, device="cpu"):
 
         for epoch in range(1,epochs+1):
 
@@ -859,8 +860,14 @@ class VQAModel(nn.Module):
             #print("Epoch: {} | Training VizWiz Accuracy: {:.3f} | Validation VizWiz Accuracy: {:.3f} | Test VizWiz Accuracy: {:.3f}".format(epoch, training_vizwiz_accuracy, validation_vizwiz_accuracy, test_vizwiz_accuracy))
             #print("Epoch: {} | Training Answerability Score: {:.3f} | Validation Answerability Score: {:.3f} | Test Answerability Score: {:.3f}\n".format(epoch, train_answerability_score, validation_answerability_score, test_answerability_score))
             
-            if save_path != None and epoch % save_every == 0:
-                self.save_model(save_path + "model_{}_e{}.pth".format(filehead, epoch))
+            if True:
+                filehead_npy="{}_e{}".format(filehead, epoch)
+                self.save_submission(test_dataloader, test_dataset, 
+                            dl24_json=False, filehead=filehead_npy, npy_dir=npy_dir, device=device)
+
+            if pth_dir != None and epoch % save_every == 0:
+                filehead_pth="{}_e{}".format(filehead, epoch)
+                self.save_model("{}{}model_{}.pth".format(pth_dir, os.sep, filehead_pth))
         return
     
     # ------------------------------------------------------------
@@ -918,7 +925,8 @@ class VQAModel(nn.Module):
         #for _, batch in enumerate(dataloader):
         idx=0
         for batch in tqdm.tqdm(dataloader):
-            #if idx>1:
+
+            #if idx>0:
             #    break
 
             if not dl24_json:                
@@ -1096,7 +1104,7 @@ class VQAModel(nn.Module):
         # We will use weighted average since that there is imbalance in answerability in the dataset as displayed in EDA section
         return validation_loss, validation_accuracy, vizwiz_accuracy, average_precision_score(answerable_true, answerable_predicted, average = 'weighted')
     
-    def save_submission(self, dataloader, dataset, criterion, dl24_json=False, filehead="", npy_dir="npy", device="cpu"):
+    def save_submission(self, dataloader, dataset, dl24_json=False, filehead="", npy_dir="npy", device="cpu"):
 
         DBG_TAG = '[{}]'.format(sys._getframe().f_code.co_name)
         print("\t{} : Start".format(DBG_TAG))
@@ -1112,6 +1120,10 @@ class VQAModel(nn.Module):
             idx=0
             #for _, batch in enumerate(dataloader):
             for batch in tqdm.tqdm(dataloader):
+
+                #if idx>0:
+                #    break
+
                 image, question = batch
                 image, question = image.to(device), question.to(device)
 
@@ -1488,8 +1500,11 @@ def Preparing_Data_Loaders(datasets, BATCH_SIZE, shuffle=True):
 # ============================================================
 # 
 # ============================================================
-def Training(model, datasets, dataloaders, trn_mode=0, dl24_json=False, 
-             params_to_update=None, hyp_prms=[50, 5e-4, 0], filehead="", pth_dir="pth", save_every=1, device="cpu"):
+#def Training(model, datasets, dataloaders, trn_mode=0, dl24_json=False, 
+#             params_to_update=None, hyp_prms=[50, 5e-4, 0], filehead="", pth_dir="pth", save_every=1, device="cpu"):
+def Training(model, datasets, dataloaders, trn_mode=0,
+             params_to_update=None, hyp_prms=[50, 5e-4, 0], filehead="", 
+             npy_dir="npy", pth_dir="pth", save_every=1, device="cpu"):
 
     DBG_TAG = '[{}]'.format(sys._getframe().f_code.co_name)
     print("\t{} : Start".format(DBG_TAG))
@@ -1499,8 +1514,8 @@ def Training(model, datasets, dataloaders, trn_mode=0, dl24_json=False,
 #    [training_dataset, validation_dataset] = datasets
 #    [training_dataloader, validation_dataloader] = dataloaders
 
-    [kagl_training_dataset,    kagl_validation_dataset,    dl24_training_dataset] = datasets
-    [kagl_training_dataloader, kagl_validation_dataloader, dl24_training_dataloader] = dataloaders
+    [kagl_training_dataloader, kagl_validation_dataloader, dl24_training_dataloader, dl24_test_dataloader] = trn_dataloaders
+    [kagl_training_dataset,    kagl_validation_dataset,    dl24_training_dataset,    dl24_test_dataset] = trn_datasets
 
     # Configuring training's hyperparameters
     #NUM_EPOCHS = 50
@@ -1526,22 +1541,25 @@ def Training(model, datasets, dataloaders, trn_mode=0, dl24_json=False,
     # Training the model and plotting the loss and accuracy
     if trn_mode==1:
         print("\t{} : train kagl_validation_dataloader".format(DBG_TAG))
-        model.train_model(kagl_validation_dataloader, None, None, 
+        model.train_model(kagl_validation_dataloader, None, dl24_test_dataloader, dl24_training_dataset,
                           loss_function, optimizer, epochs=NUM_EPOCHS, 
-                          dl24_json=False, filehead=filehead, 
-                          save_path=pth_dir, save_every=save_every)
+                          dl24_json=False, 
+                          filehead=filehead, npy_dir=npy_dir,
+                          pth_dir=pth_dir, save_every=save_every, device=device)
     elif trn_mode==2:
         print("\t{} : dl24_training_dataloader".format(DBG_TAG))
-        model.train_model(dl24_training_dataloader, None, None, 
+        model.train_model(dl24_training_dataloader, None, dl24_test_dataloader, dl24_training_dataset,
                           loss_function, optimizer, epochs=NUM_EPOCHS, 
-                          dl24_json=True, filehead=filehead, 
-                          save_path=pth_dir, save_every=save_every)
+                          dl24_json=True, 
+                          filehead=filehead, npy_dir=npy_dir,
+                          pth_dir=pth_dir, save_every=save_every, device=device)
     else:
         print("\t{} : kagl_training_dataloader".format(DBG_TAG))
-        model.train_model(kagl_training_dataloader, None, None, 
+        model.train_model(kagl_training_dataloader, None, dl24_test_dataloader, dl24_training_dataset,
                           loss_function, optimizer, epochs=NUM_EPOCHS, 
-                          dl24_json=False, filehead=filehead, 
-                          save_path=pth_dir, save_every=save_every)
+                          dl24_json=False, 
+                          filehead=filehead, npy_dir=npy_dir,
+                          pth_dir=pth_dir, save_every=save_every, device=device)
     #model.plot_loss()
     #model.plot_accuracy()
     #model.plot_vizwiz_accuracy()
@@ -1559,8 +1577,8 @@ def Eval(model, datasets, dataloaders, dl24_json=False, device="cpu"):
 
     #[training_dataset, validation_dataset, test_dataset] = datasets
     #[training_dataloader, validation_dataloader, test_dataloader] = dataloaders
-    [kagl_training_dataset,    kagl_validation_dataset,    dl24_training_dataset] = datasets
-    [kagl_training_dataloader, kagl_validation_dataloader, dl24_training_dataloader] = dataloaders
+    [kagl_training_dataloader, kagl_validation_dataloader, dl24_training_dataloader, dl24_test_dataloader] = trn_dataloaders
+    [kagl_training_dataset,    kagl_validation_dataset,    dl24_training_dataset,    dl24_test_dataset] = trn_datasets
 
     # Configuring training's hyperparameters
     #NUM_EPOCHS = 50
@@ -1629,7 +1647,7 @@ def Test(model, dataloader, dataset, dl24_json=False, filehead="", npy_dir="npy"
     #model.eval_model(validation_dataloader, 
     #                  loss_function, epochs=NUM_EPOCHS, 
     #                  dl24_json=dl24_json)
-    model.save_submission(dataloader, dataset, loss_function,
+    model.save_submission(dataloader, dataset, 
                         dl24_json=dl24_json, filehead=filehead, npy_dir=npy_dir, device=device)
     #model.plot_loss()
     #model.plot_accuracy()
@@ -1651,12 +1669,25 @@ if __name__ == "__main__":
     parser.add_argument('--dbg', action='store_true', help='Debug mode')
     parser.add_argument('--cpu',  action='store_true', help='CPU, not CUDA')
     parser.add_argument('--nt', action='store_true', help='Not train')
-    parser.add_argument('--tr', type=int, default=0,  help='')
+    parser.add_argument('--tr', type=int, default=2,  help='')
     parser.add_argument('--test', action='store_true', help='')
     parser.add_argument('--eval', action='store_true', help='')
     parser.add_argument('--nopth', action='store_true', help='')
     parser.add_argument('--ftune', type=int, default=1,  help='') # defaultで最終層のファインチューニング
     args = parser.parse_args()
+
+    # args.nopth=T      : モデルのロードなし
+    # args.nopth=F(def) : モデルロードする PTHでモデル指定
+
+    # args.test=T,      eval=*,      nt=*                    : submission.npy出力
+    # args.test=F(def), eval=T,      nt=*                    : LOSS,VQA出力 (動作保証外)
+    # args.test=F(def), eval=F(def), nt=F(def), ftune=0      : 学習, 全パラメータ
+    # args.test=F(def), eval=F(def), nt=F(def), ftune=1(def) : 学習, 最終層のみ学習
+    # args.test=F(def), eval=F(def), nt=F(def), ftune=2      : 学習, 最終層のみ学習かつ最終クラス数も変更
+    # args.test=F(def), eval=F(def), nt=F(def), ftune=9      : 学習, 最終層のみ学習かつ最終クラス数も変更、モデルはKaggle版
+
+    # args.tr == 0      : KaggleからDLできるtrain.jsonで学習
+    # args.tr == 2(def) : 課題用train.json で学習(課題の提出条件)
 
     #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     #print('device={}'.format(device))
@@ -1729,12 +1760,7 @@ if __name__ == "__main__":
     #df, ANSWER_SPACE = Create_DafaFrame(ANNOTATIONS_TRAIN_PATH, ANNOTATIONS_VAL_PATH)
     [kagl_train_df, kagl_validation_df], KAGL_ANSWER_SPACE = Create_DafaFrame_2(KAGL_ANNOTATIONS_TRAIN_PATH, KAGL_ANNOTATIONS_VAL_PATH)
     [dl24_train_df, dl24_validation_df], DL24_ANSWER_SPACE = Create_DafaFrame_DL24(DL24_ANNOTATIONS_TRAIN_PATH, DL24_ANNOTATIONS_VAL_PATH)
-#    [train_df, validation_df, test_df] = df
-    #if DL24_JSON:
-    #    df = DL24_df
-    #else:
-    #    df = KAGL_df
-    #[train_df, validation_df] = df
+
     dfs = [kagl_train_df, kagl_validation_df, dl24_train_df, dl24_validation_df]
     print("\t{} : kagl_train_df.head()={}".format(DBG_TAG, kagl_train_df.head()))
     print("")
@@ -1774,8 +1800,13 @@ if __name__ == "__main__":
         e_num    = "_eX"
 
         # ============================================================
+        #
+        # ============================================================
         #explore_3_dataframe(train_df, validation_df, test_df)
 
+        # ============================================================
+        # CLIP model
+        # ============================================================
         clip_model, preprocessor = clip.load(MODEL_NAME, device = DEVICE)
         print("\t{} : Loading Clip ...".format(DBG_TAG))
         clip_model.eval().requires_grad_(False)
@@ -1817,8 +1848,8 @@ if __name__ == "__main__":
         dl24_training_dataloader   = DataLoader(dl24_training_dataset,   batch_size=BATCH_SIZE, shuffle=True)
         dl24_test_dataloader       = DataLoader(dl24_test_dataset,       batch_size=1, shuffle=False)
 
-        trn_dataloaders = [kagl_training_dataloader, kagl_validation_dataloader, dl24_training_dataloader]
-        trn_datasets    = [kagl_training_dataset,    kagl_validation_dataset,    dl24_training_dataset]
+        trn_dataloaders = [kagl_training_dataloader, kagl_validation_dataloader, dl24_training_dataloader, dl24_test_dataloader]
+        trn_datasets    = [kagl_training_dataset,    kagl_validation_dataset,    dl24_training_dataset, dl24_test_dataset]
 
         #print("\t{} : len(dataloaders)={}".format(DBG_TAG, len(dataloaders)))
 
@@ -1832,13 +1863,13 @@ if __name__ == "__main__":
         print("\t{} : NUM_CLASSES={} <= {}, {}".format(DBG_TAG, NUM_CLASSES, NUM_CLASSES_1, NUM_CLASSES_2))
 
         # ============================================================
-        # 
+        # filehead
         # ============================================================
-        filehead="B{}_C{}".format(BATCH_SIZE, NUM_CLASSES)
+        filehead="{}_B{}_C{}".format(args.outdir, BATCH_SIZE, NUM_CLASSES)
         os.makedirs(OUTPUT_PATH, exist_ok=True)
         if not args.dbg:
             #outdir   = "{}{}{}".format(args.outdir, os.sep, filehead)
-            outdir   = "{}_{}".format(args.outdir, filehead)
+            outdir   = "{}".format(filehead)
             log_dir  = '{}{}log'.format(outdir, os.sep)
             npy_dir  = '{}{}npy'.format(outdir, os.sep)
             pth_dir  = '{}{}pth'.format(outdir, os.sep)
@@ -1847,9 +1878,6 @@ if __name__ == "__main__":
             os.makedirs(npy_dir, exist_ok=True)
             os.makedirs(pth_dir, exist_ok=True)
             os.makedirs(dump_dir, exist_ok=True)
-
-        # ============================================================
-        # Initializing the model
 
         # 最終クラス数
         num_class_kaggle_model = 5239 # KaggleからDLしたモデルを使う場合はこちら
@@ -1862,12 +1890,15 @@ if __name__ == "__main__":
 
         # 隠れクラス数
         HIDDEN_CLASS  = 512
+
+        # ============================================================
+        # Initializing the model
         #model = VQAModel(num_classes=NUM_CLASSES, device= DEVICE, hidden_size=512, model_name=MODEL_NAME).to(DEVICE)
         model = VQAModel(num_classes=tmp_num_class, device= DEVICE, hidden_size=HIDDEN_CLASS, model_name=MODEL_NAME).to(DEVICE)
         model.print_CLIP_model()
 
         # ============================================================
-        # 1. モデルのパラメータをロード
+        # モデルのパラメータをロード
         # ============================================================
 
         if not args.nopth:
@@ -1875,52 +1906,6 @@ if __name__ == "__main__":
             print("\t{} : Loading PTH_FILE={}".format(DBG_TAG, PTH_FILE))
             model.load_model(PTH_FILE)
 
-        # ============================================================
-        # 2. モデルをファインチューニング・転移学習
-        # ============================================================
-
-        print("\t{} : args.ftune={}".format(DBG_TAG, args.ftune))
-
-        if args.ftune > 0: 
-
-            # args.ftune == 0 : 全パラメータを学習
-            # args.ftune == 1 : 最終クラスのFine Tuning
-            # args.ftune == 2 : 最終クラスの数を変える転移学習 (kaggle版から)
-            # args.ftune == 3 : 最終クラスの数を変える転移学習
-
-            print("\t{} : Fine Tunnig at Last Layers !!".format(DBG_TAG))
-
-            if args.ftune >= 2: 
-
-                print("\t{} : Change n_class {} -> {} !!".format(DBG_TAG, tmp_num_class, NUM_CLASSES))
-
-                model.linear_layer2[2] = nn.Linear(HIDDEN_CLASS, NUM_CLASSES)
-                model.answer_mask_layer = nn.Linear(4, NUM_CLASSES)
-            else:
-
-                print("\t{} : Not change n_class {} -> {} !!".format(DBG_TAG, tmp_num_class, NUM_CLASSES))
-
-            # パラメータ固定
-            #for param in model.parameters():
-            #    param.requires_grad = False
-            params_to_update = []
-            for name, param in model.named_parameters():
-                #print("name={}, param.size()={}".format(name, param.size()))
-                if "linear_layer2.2" in name or "answer_mask_layer" in name:
-                    print("\t{} : params_to_update : name={}, param.size()={}".format(DBG_TAG, name, param.size()))
-                    #print("name={}, param={}".format(name, param))
-                    params_to_update.append(param)
-                else:
-                    param.requires_grad = False
-            #print("params_to_update={}".format(params_to_update))
-            #print(model)
-
-            model = model.to(DEVICE)
-
-        else:
-
-            params_to_update = None
-            print("\t{} : NOT fine tuning".format(DBG_TAG))
 
         # ============================================================
         # 課題提出用ptyの再生
@@ -1940,12 +1925,66 @@ if __name__ == "__main__":
 
         # ============================================================
         # args.nt == True : 学習
-        # args.tr == 0 : 下記Kaggleとほとんど同じ条件で学習
-        # (default)    :  "https://www.kaggle.com/code/abdelghafor/visual-question-answering/notebook"
-        #              : ただし大きな仕様変更あり
-        # args.tr == 2 : 課題用 train.zip と train.json を使って学習
-        #              : FineTuningしてもOKだが、これを使って学習することが課題条件
         elif not args.nt:
+
+            # args.nopth=T      : モデルのロードなし
+            # args.nopth=F(def) : モデルロードする PTHでモデル指定
+
+            # args.test=T,      eval=*,      nt=*                    : submission.npy出力
+            # args.test=F(def), eval=T,      nt=*                    : LOSS,VQA出力 (動作保証外)
+            # args.test=F(def), eval=F(def), nt=F(def), ftune=0      : 学習, 全パラメータ
+            # args.test=F(def), eval=F(def), nt=F(def), ftune=1(def) : 学習, 最終層のみ学習
+            # args.test=F(def), eval=F(def), nt=F(def), ftune=2      : 学習, 最終層のみ学習かつ最終クラス数も変更
+            # args.test=F(def), eval=F(def), nt=F(def), ftune=9      : 学習, 最終層のみ学習かつ最終クラス数も変更、モデルはKaggle版
+
+            # args.tr == 0      : KaggleからDLできるtrain.jsonで学習
+            # args.tr == 2(def) : 課題用train.json で学習(課題の提出条件)
+
+            # ------------------------------------------------------------
+            # 2. モデルをファインチューニング・転移学習
+            # ------------------------------------------------------------
+
+            print("\t{} : args.ftune={}".format(DBG_TAG, args.ftune))
+
+            if args.ftune > 0: 
+
+                print("\t{} : Fine Tunnig at Last Layers !!".format(DBG_TAG))
+
+                if args.ftune >= 2: 
+
+                    print("\t{} : Change n_class {} -> {} !!".format(DBG_TAG, tmp_num_class, NUM_CLASSES))
+
+                    model.linear_layer2[2] = nn.Linear(HIDDEN_CLASS, NUM_CLASSES)
+                    model.answer_mask_layer = nn.Linear(4, NUM_CLASSES)
+                else:
+
+                    print("\t{} : Not change n_class {} -> {} !!".format(DBG_TAG, tmp_num_class, NUM_CLASSES))
+
+                # パラメータ固定
+                #for param in model.parameters():
+                #    param.requires_grad = False
+                params_to_update = []
+                for name, param in model.named_parameters():
+                    #print("name={}, param.size()={}".format(name, param.size()))
+                    if "linear_layer2.2" in name or "answer_mask_layer" in name:
+                        print("\t{} : params_to_update : name={}, param.size()={}".format(DBG_TAG, name, param.size()))
+                        #print("name={}, param={}".format(name, param))
+                        params_to_update.append(param)
+                    else:
+                        param.requires_grad = False
+                #print("params_to_update={}".format(params_to_update))
+                #print(model)
+
+                model = model.to(DEVICE)
+
+            else:
+
+                params_to_update = None
+                print("\t{} : NOT fine tuning".format(DBG_TAG))
+
+
+
+
 
             # Warning !! : args.tr == 2
 
@@ -1958,9 +1997,10 @@ if __name__ == "__main__":
                         [50, 1e-3, 0],
                     ]
 
-            Training(model, trn_datasets, trn_dataloaders, trn_mode=args.tr, dl24_json=DL24_JSON,
-                     params_to_update=params_to_update, hyp_prms=hyp_prms[args.tr], filehead=filehead,
-                     pth_dir="{}{}".format(pth_dir, os.sep), save_every=1, device=DEVICE)
+            Training(model, trn_datasets, trn_dataloaders, trn_mode=args.tr,
+                     params_to_update=params_to_update, hyp_prms=hyp_prms[args.tr], 
+                     filehead=filehead, npy_dir=npy_dir,
+                     pth_dir=pth_dir, save_every=1, device=DEVICE)
 
         # ============================================================
         else:
